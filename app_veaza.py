@@ -34,7 +34,7 @@ promociones  = db["promociones"]
 devoluciones = db["devoluciones"]
 eventos      = db["eventos"]
 
-st.title("🛒 Veaza Plada — Ecosistema Omnicanal (MongoDB Atlas)")
+st.title("🛒 Veaza Plada")
 
 # =======================
 # UTILIDADES / CACHÉS
