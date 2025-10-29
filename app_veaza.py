@@ -8,7 +8,7 @@ import pandas as pd
 # =======================
 # CONFIGURACIÓN
 # =======================
-st.set_page_config(page_title="Veaza Plada — Omnicanal (MongoDB Atlas)", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Veaza Plada", page_icon="🛒", layout="wide")
 
 MONGODB_URI = st.secrets["app"]["MONGODB_URI"]
 if not MONGODB_URI:
