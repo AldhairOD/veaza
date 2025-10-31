@@ -231,7 +231,7 @@ with tabs[0]:
                 except Exception as e:
                     st.error(f"❌ Error: {e}")
 
-    st.markdown("### ✏️ Editar / 🗑️ Eliminar (lógico)")
+    st.markdown("### ✏️ Editar / 🗑️ Eliminar")
     # seleccionar de la lista ya filtrada
     prod_labels = ["— Selecciona —"] + [f'{r["nombre"]} — {r["sku"]}' for r in productos_rows]
     sel_prod = st.selectbox("Producto", prod_labels, key="prod_sel_edit")
@@ -253,7 +253,7 @@ with tabs[0]:
             with colu1:
                 save_p = st.form_submit_button("💾 Guardar cambios", use_container_width=True)
             with colu2:
-                del_p = st.form_submit_button("🗑️ Eliminar (lógico)", use_container_width=True)
+                del_p = st.form_submit_button("🗑️ Eliminar", use_container_width=True)
             if save_p:
                 upd = {
                     "nombre": e_nombre.strip(),
@@ -344,7 +344,7 @@ with tabs[1]:
                 except Exception as e:
                     st.error(f"❌ Error: {e}")
 
-    st.markdown("### ✏️ Editar / 🗑️ Eliminar (lógico)")
+    st.markdown("### ✏️ Editar / 🗑️ Eliminar")
     cli_labels = ["— Selecciona —"] + [f'{r["apellidos"]}, {r["nombres"]} — {r["doc_tipo"]}-{r["doc_num"]}' for r in cli_rows]
     sel_cli = st.selectbox("Cliente", cli_labels, key="cli_sel_edit")
     if sel_cli != "— Selecciona —":
@@ -364,7 +364,7 @@ with tabs[1]:
             with colc1:
                 cu = st.form_submit_button("💾 Guardar cambios", use_container_width=True)
             with colc2:
-                cd = st.form_submit_button("🗑️ Eliminar (lógico)", use_container_width=True)
+                cd = st.form_submit_button("🗑️ Eliminar", use_container_width=True)
 
             if cu:
                 upd = {
