@@ -103,12 +103,14 @@ def validar_producto(d: dict) -> Tuple[bool, str]:
         return False, "moneda debe ser ISO de 3 letras (PEN, USD...)."
     return True, ""
 
-def validar_cliente(d: dict) -> Tuple[bool, str]:
-    for f in ["doc_tipo", "doc_num", "nombres", "apellidos"]:
+def validar_cliente(d: dict) -> tuple[bool, str]:
+    obligatorios = ["doc_tipo", "doc_num", "nombres", "apellidos"]
+    for f in obligatorios:
         if not d.get(f):
             return False, f"'{f}' es obligatorio."
     if d["doc_tipo"] not in ["DNI", "CE", "PAS"]:
         return False, "doc_tipo inválido."
+    # el resto puede ser None
     return True, ""
 
 def validar_orden(d: dict) -> Tuple[bool, str]:
@@ -421,6 +423,8 @@ with tabs[2]:
         for r in order_rows
     ])
     st.dataframe(df_ord, use_container_width=True, hide_index=True)
+    total_general = sum(r.get("total", 0) or 0 for r in order_rows)
+    st.caption(f"🧮 Total de órdenes listadas: {round(total_general, 2)}")
 
     st.markdown("### ➕ Crear orden")
     oc_lbl = st.selectbox("Cliente", list(cli_opts.keys()), key="o_cli")
@@ -434,6 +438,8 @@ with tabs[2]:
         p_val = prod_opts[p_lbl]
         qty   = st.number_input(f"Cantidad #{i+1}", min_value=1, value=1, key=f"o_qty_{i}")
         price = float(precio_by_id.get(p_val, 0.0)) if p_val else 0.0
+        subtotal_sugerido = round(price * qty, 2)
+        st.caption(f"Precio unit.: {price} | Subtotal sugerido: {subtotal_sugerido}")
         st.caption(f"Precio sugerido: {price}")
         o_items.append({"producto_id": p_val, "cantidad": int(qty), "precio": price})
 
@@ -531,7 +537,10 @@ with tabs[3]:
                         st.rerun()
 
     # tabla de pagos (se refresca siempre)
-    pagos_rows = list(pagos.find({}).sort("creado_en",-1).limit(100))
+    if current_order:
+        pagos_rows = list(pagos.find({"orden_id": current_order["_id"]}).sort("creado_en", -1))
+    else:
+        pagos_rows = list(pagos.find({}).sort("creado_en", -1).limit(100))
     df_pagos = pd.DataFrame([
         {
             "Orden": str(r.get("orden_id")),
@@ -617,6 +626,8 @@ with tabs[5]:
         p_val = prod_opts[p_lbl]
         qty = st.number_input(f"Cantidad #{i+1}", min_value=1, value=1, key=f"cart_q_{i}")
         price = float(precio_by_id.get(p_val, 0.0)) if p_val else 0.0
+        subtotal_sugerido = round(price * qty, 2)
+        st.caption(f"Precio unit.: {price} | Subtotal sugerido: {subtotal_sugerido}")
         st.caption(f"Precio sugerido: {price}")
         cart_items.append({
             "producto_id": p_val,
