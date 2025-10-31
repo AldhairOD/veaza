@@ -478,26 +478,33 @@ with tabs[2]:
 # =========================================================
 with tabs[3]:
     st.subheader("💳 Pagos")
-    ord_code = st.text_input("Código de orden", "", key="pago_orden_code")
-    current_order = ordenes.find_one({"codigo": ord_code}) if ord_code else None
 
+    # este input dispara el rerun automáticamente
+    ord_code = st.text_input("Código de orden", "", key="pago_orden_code")
+
+    current_order = None
+    if ord_code.strip():
+        current_order = ordenes.find_one({"codigo": ord_code.strip()})
+
+    # si encontré la orden, muestro info y form
     if current_order:
         st.info(f"Orden: {current_order['codigo']} — Total: {current_order.get('total')} {current_order.get('moneda')}")
+
         with st.form("pago_form", clear_on_submit=True):
             monto = st.text_input("Monto", value=str(current_order.get("total","") or ""), key="pago_monto")
             moneda = st.text_input("Moneda (ISO 3)", value=current_order.get("moneda","PEN"), key="pago_moneda")
             metodo = st.selectbox("Método", ["TARJETA","YAPE","PLIN","TRANSFERENCIA","EFECTIVO"], key="pago_metodo")
             estado = st.selectbox("Estado", ["PENDIENTE","APROBADO","RECHAZADO","REEMBOLSADO"], key="pago_estado")
-            submit_pay = st.form_submit_button("Registrar pago", use_container_width=True)
-            if submit_pay:
-                # Validar no duplicar pago aprobado mismo monto
-                pago_existente = pagos.find_one({
+            if st.form_submit_button("Registrar pago", use_container_width=True):
+
+                # no duplicar pagos aprobados con mismo monto
+                ya_hay = pagos.find_one({
                     "orden_id": current_order["_id"],
                     "monto": float(monto),
                     "estado": "APROBADO"
                 })
-                if pago_existente and estado == "APROBADO":
-                    st.error("❌ Ya existe un pago APROBADO con el mismo monto para esta orden.")
+                if ya_hay and estado == "APROBADO":
+                    st.error("❌ Ya existe un pago APROBADO con ese monto para esta orden.")
                 else:
                     pago_doc = {
                         "orden_id": current_order["_id"],
@@ -508,39 +515,45 @@ with tabs[3]:
                         "transaccion_ref": f"TRX-{current_order['codigo']}",
                         "creado_en": dt.datetime.utcnow()
                     }
-                    ok, msg = validar_pago(pago_doc)
-                    if not ok:
-                        st.error("❌ " + msg)
-                    else:
-                        pagos.insert_one(pago_doc)
+                    pagos.insert_one(pago_doc)
 
-                        # si está aprobado, actualizo la orden
-                        if estado == "APROBADO":
-                            # sumar pagos aprobados
-                            pagados = list(pagos.find({
-                                "orden_id": current_order["_id"],
-                                "estado": "APROBADO"
-                            }))
-                            total_pagado = round(sum(p["monto"] for p in pagados), 2)
-                            new_estado = "PAGADA" if total_pagado >= current_order.get("total", 0) else current_order.get("estado","CREADA")
-                            ordenes.update_one(
-                                {"_id": current_order["_id"]},
-                                {"$set": {
-                                    "estado": new_estado,
-                                    "total_pagado": total_pagado,
-                                    "actualizada_en": dt.datetime.utcnow()
-                                }}
-                            )
+                    # si se aprobó, actualizo la orden
+                    if estado == "APROBADO":
+                        pagos_apr = list(pagos.find({"orden_id": current_order["_id"], "estado": "APROBADO"}))
+                        total_pagado = round(sum(p["monto"] for p in pagos_apr), 2)
+                        nuevo_estado = "PAGADA" if total_pagado >= current_order.get("total", 0) else current_order.get("estado","CREADA")
+                        ordenes.update_one(
+                            {"_id": current_order["_id"]},
+                            {"$set": {
+                                "total_pagado": total_pagado,
+                                "estado": nuevo_estado,
+                                "actualizada_en": dt.datetime.utcnow()
+                            }}
+                        )
 
-                        st.success("✅ Pago registrado.")
-                        st.cache_data.clear()
-                        st.rerun()
-
-    # tabla de pagos (se refresca siempre)
-    if current_order:
-        pagos_rows = list(pagos.find({"orden_id": current_order["_id"]}).sort("creado_en", -1))
+                    # limpiar caché + recargar página
+                    st.cache_data.clear()
+                    st.success("✅ Pago registrado.")
+                    st.rerun()
     else:
-        pagos_rows = list(pagos.find({}).sort("creado_en", -1).limit(100))
+        if ord_code.strip():
+            st.warning("⚠️ No se encontró una orden con ese código.")
+
+    # 👇 AQUÍ está el cambio importante:
+    # si hay orden -> solo pagos de esa orden
+    # si no hay orden -> últimos 100 pagos
+    if current_order:
+        pagos_rows = list(
+            pagos.find({"orden_id": current_order["_id"]})
+                 .sort("creado_en", -1)
+        )
+    else:
+        pagos_rows = list(
+            pagos.find({})
+                 .sort("creado_en", -1)
+                 .limit(100)
+        )
+
     df_pagos = pd.DataFrame([
         {
             "Orden": str(r.get("orden_id")),
