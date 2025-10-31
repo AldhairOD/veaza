@@ -479,16 +479,36 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("💳 Pagos")
 
-    # este input dispara el rerun automáticamente
-    ord_code = st.text_input("Código de orden", "", key="pago_orden_code")
+    ord_input = st.text_input("Código de orden", "", key="pago_orden_code").strip()
 
     current_order = None
-    if ord_code.strip():
-        current_order = ordenes.find_one({"codigo": ord_code.strip()})
 
-    # si encontré la orden, muestro info y form
+    # helper para saber si parece un ObjectId
+    def es_objectid(s: str) -> bool:
+        if len(s) != 24:
+            return False
+        try:
+            int(s, 16)
+            return True
+        except ValueError:
+            return False
+
+    # 1) intentar encontrar la orden
+    if ord_input:
+        if es_objectid(ord_input):
+            # buscar por _id
+            from bson import ObjectId
+            current_order = ordenes.find_one({"_id": ObjectId(ord_input)})
+        else:
+            # buscar por codigo
+            current_order = ordenes.find_one({"codigo": ord_input})
+
+    # 2) si la encontré, muestro el form
     if current_order:
-        st.info(f"Orden: {current_order['codigo']} — Total: {current_order.get('total')} {current_order.get('moneda')}")
+        st.info(
+            f"Orden: **{current_order['codigo']}** "
+            f"({current_order['_id']}) — Total: {current_order.get('total')} {current_order.get('moneda')}"
+        )
 
         with st.form("pago_form", clear_on_submit=True):
             monto = st.text_input("Monto", value=str(current_order.get("total","") or ""), key="pago_monto")
@@ -496,14 +516,13 @@ with tabs[3]:
             metodo = st.selectbox("Método", ["TARJETA","YAPE","PLIN","TRANSFERENCIA","EFECTIVO"], key="pago_metodo")
             estado = st.selectbox("Estado", ["PENDIENTE","APROBADO","RECHAZADO","REEMBOLSADO"], key="pago_estado")
             if st.form_submit_button("Registrar pago", use_container_width=True):
-
-                # no duplicar pagos aprobados con mismo monto
-                ya_hay = pagos.find_one({
+                # evitar duplicado aprobado mismo monto
+                pago_dup = pagos.find_one({
                     "orden_id": current_order["_id"],
                     "monto": float(monto),
                     "estado": "APROBADO"
                 })
-                if ya_hay and estado == "APROBADO":
+                if pago_dup and estado == "APROBADO":
                     st.error("❌ Ya existe un pago APROBADO con ese monto para esta orden.")
                 else:
                     pago_doc = {
@@ -513,14 +532,14 @@ with tabs[3]:
                         "metodo": metodo,
                         "estado": estado,
                         "transaccion_ref": f"TRX-{current_order['codigo']}",
-                        "creado_en": dt.datetime.utcnow()
+                        "creado_en": dt.datetime.utcnow(),
                     }
                     pagos.insert_one(pago_doc)
 
-                    # si se aprobó, actualizo la orden
+                    # si se aprobó, actualizar la orden
                     if estado == "APROBADO":
-                        pagos_apr = list(pagos.find({"orden_id": current_order["_id"], "estado": "APROBADO"}))
-                        total_pagado = round(sum(p["monto"] for p in pagos_apr), 2)
+                        aprobados = list(pagos.find({"orden_id": current_order["_id"], "estado": "APROBADO"}))
+                        total_pagado = round(sum(p["monto"] for p in aprobados), 2)
                         nuevo_estado = "PAGADA" if total_pagado >= current_order.get("total", 0) else current_order.get("estado","CREADA")
                         ordenes.update_one(
                             {"_id": current_order["_id"]},
@@ -531,32 +550,38 @@ with tabs[3]:
                             }}
                         )
 
-                    # limpiar caché + recargar página
-                    st.cache_data.clear()
                     st.success("✅ Pago registrado.")
+                    st.cache_data.clear()
                     st.rerun()
     else:
-        if ord_code.strip():
-            st.warning("⚠️ No se encontró una orden con ese código.")
+        if ord_input:
+            st.warning("⚠️ No se encontró una orden con ese código o _id.")
 
-    # 👇 AQUÍ está el cambio importante:
-    # si hay orden -> solo pagos de esa orden
-    # si no hay orden -> últimos 100 pagos
+    # 3) tabla de pagos
+    #    si hay orden -> solo sus pagos
+    #    si no hay -> últimos 100
     if current_order:
         pagos_rows = list(
             pagos.find({"orden_id": current_order["_id"]})
                  .sort("creado_en", -1)
         )
+        # mapeo directo
+        order_code_map = {str(current_order["_id"]): current_order["codigo"]}
     else:
         pagos_rows = list(
             pagos.find({})
                  .sort("creado_en", -1)
                  .limit(100)
         )
+        # para mostrar el código tenemos que buscar las órdenes de esos pagos
+        orden_ids = list({p["orden_id"] for p in pagos_rows})
+        orden_docs = list(ordenes.find({"_id": {"$in": list(orden_ids)}}))
+        order_code_map = {str(o["_id"]): o.get("codigo","") for o in orden_docs}
 
     df_pagos = pd.DataFrame([
         {
-            "Orden": str(r.get("orden_id")),
+            "Orden ID": str(r.get("orden_id")),
+            "Código de orden": order_code_map.get(str(r.get("orden_id")), ""),
             "Monto": r.get("monto",""),
             "Moneda": r.get("moneda",""),
             "Método": r.get("metodo",""),
@@ -566,8 +591,8 @@ with tabs[3]:
         }
         for r in pagos_rows
     ])
-    st.dataframe(df_pagos, use_container_width=True, hide_index=True)
 
+    st.dataframe(df_pagos, use_container_width=True, hide_index=True)
 # =========================================================
 # 5. INVENTARIO
 # =========================================================
